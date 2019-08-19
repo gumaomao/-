@@ -156,6 +156,155 @@
           <div id="js-content" class="content-ll">
             
   
+    <article id="post-Docker容器中ngnix反向代理问题" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2019/08/16/Docker容器中ngnix反向代理问题/">Docker容器中ngnix反向代理问题</a>
+    </h1>
+  
+
+        
+        <a href="/2019/08/16/Docker容器中ngnix反向代理问题/" class="archive-article-date">
+  	<time datetime="2019-08-16T02:34:07.840Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2019-08-16</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h1 id="问题背景"><a href="#问题背景" class="headerlink" title="问题背景:"></a>问题背景:</h1><p> 项目前端展示的文章内容,是后台KindEditor富文本编辑器编辑生成的.其中需要插入图片,客户担心在富文本编辑器中插入的图片,会在图片服务器迁移后,不能正常显示,且改动较多</p>
+<h1 id="解决过程"><a href="#解决过程" class="headerlink" title="解决过程"></a>解决过程</h1><h5 id="1-改造编辑器中的图片路径"><a href="#1-改造编辑器中的图片路径" class="headerlink" title="1.改造编辑器中的图片路径."></a>1.改造编辑器中的图片路径.</h5><p>   在实际工作中,一般我们会将图片上传到专门的图片服务器中,而把路径地址存储到数据库中.前端展示时,根据数据库中的路径地址去取到图片  而现在的图片地址是ip+端口的绝对路径地址,这样写死以后是肯定取不到图片的,也不利于后期改造.   所以必须 </p>
+<p><strong>先把图片存储在数据库中的地址由绝对路径改为相对路径,并在路径中增加一个标识便于ngnix监听</strong></p>
+<p>这次我修改的监听标识为”/photoserver”   当图片在前端展示时还会拼成绝对路径,端口号为4001</p>
+<h5 id="2-修改ngnix的配置文件-使其监听并拦截到图片路径-反向代理到新图片服务器"><a href="#2-修改ngnix的配置文件-使其监听并拦截到图片路径-反向代理到新图片服务器" class="headerlink" title="2.修改ngnix的配置文件,使其监听并拦截到图片路径,反向代理到新图片服务器"></a>2.修改ngnix的配置文件,使其监听并拦截到图片路径,反向代理到新图片服务器</h5><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">这里特别要注意一点的是:如果你的ngnix是在docker容器里的,一定要先把服务器的端口和docker的端口映射,要不直接配置监听服务器端口,是不起作用的.我就是在这里浪费了很多时间.如果你的ngnix是直接安装在服务器上则不会出现这个问题</span><br><span class="line"></span><br><span class="line">c44ea7a06fd9        harbor.legendshop.cn/legendshop-public/nginx:1.13.11             &quot;nginx -g &apos;daemon of…&quot;   4 days ago          Up 3 days           0.0.0.0:4001-&gt;80/tcp, 0.0.0.0:4007-&gt;443/tcp   xiamen-nginx</span><br><span class="line"></span><br><span class="line">上边是sudo docker ps 中ngnix的情况,可以看到服务器的4001端口映射到了80端口</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">这个为ngnix.conf中的配置情况,拦截到/photoserver再次代理转发到新的地址,示例是转发到我们docker中的另一个图片应用</span><br><span class="line"></span><br><span class="line">server &#123;</span><br><span class="line">        </span><br><span class="line">		listen 80;</span><br><span class="line">		</span><br><span class="line">        location / &#123;</span><br><span class="line">			</span><br><span class="line">			proxy_set_header Host $host:4001;</span><br><span class="line">			proxy_set_header X-Real-IP $remote_addr;</span><br><span class="line">			proxy_set_header X-Forwarded-Host $host;</span><br><span class="line">			proxy_set_header X-Forwarded-Server $host;</span><br><span class="line">			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;</span><br><span class="line">			</span><br><span class="line">			proxy_pass http://xiamen-web:8080;</span><br><span class="line">        &#125;</span><br><span class="line">		</span><br><span class="line">		location /photoserver &#123;</span><br><span class="line">		</span><br><span class="line">			proxy_set_header Host $host:4001;</span><br><span class="line">			proxy_set_header X-Real-IP $remote_addr;</span><br><span class="line">			proxy_set_header X-Forwarded-Host $host;</span><br><span class="line">			proxy_set_header X-Forwarded-Server $host;</span><br><span class="line">			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;</span><br><span class="line">			</span><br><span class="line">			proxy_pass http://xiamen-photo:8080;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+      
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2019/08/16/Docker容器中ngnix反向代理问题/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
+    <article id="post-C语言程序设计(第四版)谭浩强著读书笔记(一)之Hello World" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2019/08/09/C语言程序设计(第四版)谭浩强著读书笔记(一)之Hello World/">C语言程序设计(第四版)谭浩强著读书笔记(一)之Hello World</a>
+    </h1>
+  
+
+        
+        <a href="/2019/08/09/C语言程序设计(第四版)谭浩强著读书笔记(一)之Hello World/" class="archive-article-date">
+  	<time datetime="2019-08-09T07:28:00.000Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2019-08-09</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <p>本人目前为Java程序员,但为了考研需要自学C语言,毕竟数据结构,操作系统等专业书都是使用C语言作为例子.</p>
+<p>此系列文章会略去特别基础的问题,只写C语言与Java语言不同的地方,主要针对有一定编程基础,至少会一门编程语言的同学,零基础的同学仅供参考.</p>
+<p>此系列参考高校教材   <strong>C语言程序设计(第四版)谭浩强著</strong>  听说有很多错误和不规范的地方,大家请小心分辨</p>
+<p>#1.1 最简单的C语言程序举例</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;stdio.h&gt;  //预编译处理指令</span></span></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span><span class="params">()</span>         </span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="function"><span class="keyword">int</span> <span class="title">max</span><span class="params">(<span class="keyword">int</span> x ,<span class="keyword">int</span> y)</span></span>;</span><br><span class="line">    <span class="keyword">int</span> a,b,c;</span><br><span class="line">    <span class="built_in">scanf</span>(<span class="string">"%d,%d"</span>,&amp;a,&amp;b); <span class="comment">//输入变量a和b的值</span></span><br><span class="line">    c=max(a,b);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">"max=%d\n"</span>,c);  <span class="comment">//打印c的值</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">max</span><span class="params">(<span class="keyword">int</span> x,<span class="keyword">int</span> y)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="keyword">int</span> z;</span><br><span class="line">    <span class="keyword">if</span>(x&gt;y) z=x;</span><br><span class="line">    <span class="keyword">else</span> z=y;</span><br><span class="line">    <span class="keyword">return</span>(z);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">运行结果为:</span><br><span class="line"><span class="number">8</span>,<span class="number">5</span></span><br><span class="line">max=<span class="number">8</span></span><br></pre></td></tr></table></figure>
+
+<p>上段代码就是C语言一个简单的Hello World例子了.需要注意的应该有三个地方:</p>
+<ul>
+<li>include &lt;stdio.h&gt; 是在使用函数库中的输入输出函数;  stdio.h是系统提供的一个文件名, ,h是头文件的意思,这些文件都要放在各个文件模块的开头   不加这一句,后边的scanf函数和printf函数无法使用  因为本身C语言是不包含这些库函数的</li>
+</ul>
+<ul>
+<li><p>scanf(“%d,%d”,&amp;a,&amp;b); 中”%d”含义是十进制整数形式 d可以替换为各种字母,例如”%s”表示字符串.”%c”表示单个字符  </p>
+<p>&amp;是地址符,&amp;a就是变量a的地址,之后在指针那里也会很多使用   键盘对应输入两个整数,会分别赋给a,b</p>
+</li>
+<li><p>printf(“max=%d\n”,c);  同样的道理, \n是换行符的意思  n也是可以被很多字母替代的,各有各不同的含义. 在此不一一列举,需要看的自己查资料</p>
+</li>
+</ul>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+      
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2019/08/09/C语言程序设计(第四版)谭浩强著读书笔记(一)之Hello World/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
     <article id="post-拦截器filter自动注入为空的问题" class="article article-type-post  article-index" itemscope itemprop="blogPost">
   <div class="article-inner">
     
